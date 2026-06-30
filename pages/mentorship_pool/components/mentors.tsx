@@ -87,7 +87,7 @@ const verticalHeads = [
   },
   {
     name: "Nitin Sharma",
-    position: "Founder @ Integrated Fintech Community",
+    position: "Founder, BFSI & Fintech Networking Community.",
     institute:"",
     image: nitin,
     linkedin: "https://www.linkedin.com/in/nitinsharmavats/",
