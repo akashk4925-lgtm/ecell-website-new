@@ -1,15 +1,15 @@
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-import verifyLoggedin from "../../../middleware/VerifyLoggedin.js";
-import verifyGammaAdmin from "../../../middleware/VerifyGammaAdmin.js";
-import NormalAdmin from "../../../models/NormalAdmin.js";
-import Blog from "../../../models/Blog.js";
-import Schemes from "../../../models/Schemes.js";
-import Student from "../../../models/Student.js";
-import Startup from "../../../models/Startup.js";
-import verifyAdmin from "../../../middleware/VerifyAdmin.js";
+import verifyLoggedin from "../../../middleware/VerifyLoggedin";
+import verifyGammaAdmin from "../../../middleware/VerifyGammaAdmin";
+import NormalAdmin from "../../../models/NormalAdmin";
+import Blog from "../../../models/Blog";
+import Schemes from "../../../models/Schemes";
+import Student from "../../../models/Student";
+import Startup from "../../../models/Startup";
+import verifyAdmin from "../../../middleware/VerifyAdmin";
 import nc from "next-connect";
-import dbConnect from "../../../lib/dbConnect.js";
+import dbConnect from "../../../lib/dbConnect";
 
 const router = nc();
 

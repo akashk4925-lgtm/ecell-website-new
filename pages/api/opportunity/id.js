@@ -1,10 +1,10 @@
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-import Opportunity from "../../../models/Opportunity.js";
-import verifyLoggedin from "../../../middleware/VerifyLoggedin.js";
+import Opportunity from "../../../models/Opportunity";
+import verifyLoggedin from "../../../middleware/VerifyLoggedin";
 import nc from "next-connect";
-import dbConnect from "../../../lib/dbConnect.js";
-// import verifyEmail from "../middleware/VerifyEmail.js"
+import dbConnect from "../../../lib/dbConnect";
+// import verifyEmail from "../middleware/VerifyEmail"
 
 const router = nc();
 

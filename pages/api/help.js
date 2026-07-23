@@ -1,10 +1,10 @@
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 import nc from "next-connect";
-import dbConnect from "../../lib/dbConnect.js";
-import Help from "../../models/Help.js";
-import verifyAdmin from "../../middleware/VerifyAdmin.js";
-import verifyLoggedin from "../../middleware/VerifyLoggedin.js";
+import dbConnect from "../../lib/dbConnect";
+import Help from "../../models/Help";
+import verifyAdmin from "../../middleware/VerifyAdmin";
+import verifyLoggedin from "../../middleware/VerifyLoggedin";
 
 const router = nc();
 

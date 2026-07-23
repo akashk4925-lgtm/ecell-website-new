@@ -1,9 +1,9 @@
-import verifyLoggedin from "../../../middleware/VerifyLoggedin.js";
-import Opportunity from "../../../models/Opportunity.js";
-import Student from "../../../models/Student.js";
-import Response from "../../../models/Response.js";
+import verifyLoggedin from "../../../middleware/VerifyLoggedin";
+import Opportunity from "../../../models/Opportunity";
+import Student from "../../../models/Student";
+import Response from "../../../models/Response";
 import nc from "next-connect";
-import dbConnect from "../../../lib/dbConnect.js";
+import dbConnect from "../../../lib/dbConnect";
 
 const router = nc();
 

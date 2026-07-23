@@ -1,8 +1,8 @@
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 import nc from "next-connect";
-import dbConnect from "../../lib/dbConnect.js";
-import SuperAdmin from "../../models/SuperAdmin.js";
+import dbConnect from "../../lib/dbConnect.ts";
+import SuperAdmin from "../../models/SuperAdmin";
 
 const router = nc();
 dotenv.config();

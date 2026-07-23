@@ -4,15 +4,15 @@ import jwt from "jsonwebtoken";
 import encrypt from "../../../encryption/encryt.js";
 import dotenv from "dotenv";
 import nc from "next-connect";
-import dbConnect from "../../../lib/dbConnect.js";
+import dbConnect from "../../../lib/dbConnect";
 
 const Router = nc();
 dotenv.config();
 
 //models
-import Startup from "../../../models/Startup.js";
-import Student from "../../../models/Student.js";
-import Response from "../../../models/Response.js";
+import Startup from "../../../models/Startup";
+import Student from "../../../models/Student";
+import Response from "../../../models/Response";
 
 Router.post("/api/signup/student", async (req, res) => {
   await dbConnect();
