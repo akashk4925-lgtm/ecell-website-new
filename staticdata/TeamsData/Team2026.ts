@@ -1,3 +1,5 @@
+import type { TeamData } from "./types";
+
 export const team2026 = {
   year: "Team2026",
   session: "2026-27",
@@ -137,4 +139,4 @@ export const team2026 = {
     }
     
   ]
-};
+} satisfies TeamData;

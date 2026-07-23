@@ -1,3 +1,5 @@
+import type { TeamData } from "./types";
+
 export const team2025 = {
   year: "Team2025",
   session: "2025-26",
@@ -125,4 +127,4 @@ export const team2025 = {
       linkedin: "https://www.linkedin.com/in/rasesh-shetty",
     },
   ]
-}
+} satisfies TeamData;
