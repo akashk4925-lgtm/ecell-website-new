@@ -1,17 +1,22 @@
 // pages/api/auth/[...nextauth].js
 import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
+import dns from "node:dns";
 
-// IMPORTANT: Use advanced initialization to get access to req and res
-export default async function auth(req, res) {
-    // Pass req and res to NextAuth along with your options
-    return NextAuth(req, res, {
-        // Changed name to avoid confusion with the function name
-        secret: process.env.NEXTAUTH_SECRET,
+dns.setDefaultResultOrder("ipv4first");
+
+// IMPORTANT: authOptions exported for getServerSession in getServerSideProps
+export const authOptions = {
+    secret: process.env.NEXTAUTH_SECRET || "ecell-website-secret-key-2026-production",
         providers: [
             GoogleProvider({
                 clientId: process.env.GOOGLE_CLIENT_ID,
                 clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+                authorization: {
+                    params: {
+                        prompt: "select_account",
+                    },
+                },
             }),
         ],
         callbacks: {
@@ -59,6 +64,15 @@ export default async function auth(req, res) {
                 if (trigger === "update" && session?.user?.roles) {
                     token.roles = session.user.roles;
                 }
+
+                // Keep the backend token in sync when the session gains a role
+                // after profile creation.
+                const jwtLib = require("jsonwebtoken");
+                token.backendToken = jwtLib.sign(
+                    { id: token.id, roles: token.roles, roleData: token.roleData },
+                    process.env.NEXTAUTH_SECRET || "ecell-website-secret-key-2026-production",
+                    { expiresIn: "30d" }
+                );
                 return token;
             },
             async session({ session, token }) {
@@ -66,11 +80,15 @@ export default async function auth(req, res) {
                 session.user.id = token.id;
                 session.user.roles = token.roles;
                 session.user.roleData = token.roleData;
+                session.jwtToken = token.backendToken; // Expose the JWT to the client interceptor
                 return session;
             },
         },
         pages: {
             error: "/grow-your-resume", // Send back to the login page if error
         },
-    });
+};
+
+export default async function auth(req, res) {
+    return NextAuth(req, res, authOptions);
 }

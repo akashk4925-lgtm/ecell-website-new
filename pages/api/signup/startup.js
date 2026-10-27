@@ -1,17 +1,17 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import encrypt from "../../../encryption/encryt";
+import encrypt from "../../../encryption/encrypt.js";
 import dotenv from "dotenv";
 import nc from "next-connect";
-import dbConnect from "../../../lib/dbConnect";
+import dbConnect from "../../../lib/dbConnect.js";
 
 const Router = nc();
 dotenv.config();
 
 //models
-import Startup from "../../../models/Startup";
-import Student from "../../../models/Student";
-import Response from "../../../models/Response";
+import Startup from "../../../models/Startup.js";
+import Student from "../../../models/Student.js";
+import Response from "../../../models/Response.js";
 
 Router.post("/api/signup/startup", async (req, res) => {
   await dbConnect();

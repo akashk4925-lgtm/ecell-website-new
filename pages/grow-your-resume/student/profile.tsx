@@ -1,47 +1,78 @@
-"use client";
-
 import { useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { LogOut, Save, Edit, X } from "lucide-react";
 import { NavLogo } from "../../../components/navbar/NavLogo";
 import { useRouter } from "next/router";
-import { studentsAPI } from "../../../lib/api";
+import { studentsAPI, usersAPI } from "../../../lib/api";
 import { getStudentId, getStoredUser } from "../../../lib/auth";
 import { toast } from "react-hot-toast";
 import { UserWithRoles } from "../../../lib/types";
-import { getSession, useSession } from "next-auth/react";
-import { signOut } from "next-auth/react";
+import { useSession, signOut, getSession } from "next-auth/react";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../../api/auth/[...nextauth]";
+import { serverAPI } from "../../../lib/server-api";
+import { ensureAbsoluteUrl } from "../../../lib/utils";
 
-const ProfilePage = () => {
-    const [profileData, setProfileData] = useState({
-        name: "",
+interface StudentProfilePageProps {
+    initialProfile?: any;
+    user?: UserWithRoles;
+}
+
+const mapStudentToState = (data: any, fallbackUser?: any) => {
+    return {
+        name: data?.name || fallbackUser?.name || "",
+        rollNumber: data?.rollNo || "",
+        emailId: data?.user?.email || fallbackUser?.email || "",
+        cpi: data?.cpi ? data.cpi.toString() : "",
+        branch: data?.branch || "Architecture, Planning and Design",
+        linkedinLink: data?.linkedinUrl || "",
+        githubLink: data?.githubUrl || "",
+        resumeLink: data?.resumeUrl || "",
+        year: data?.year ? (typeof data.year === "number" ? `${data.year} Year` : data.year.toString()) : "1st Year",
+        courseType: data?.courseType || "B.Tech",
+    };
+};
+
+const ProfilePage: React.FC<StudentProfilePageProps> = ({ initialProfile, user: ssrUser }) => {
+    const hasInitialData = !!(initialProfile && (initialProfile.rollNo || initialProfile.id));
+    const initial = hasInitialData ? mapStudentToState(initialProfile, ssrUser) : {
+        name: ssrUser?.name || "",
         rollNumber: "",
-        emailId: "",
+        emailId: ssrUser?.email || "",
         cpi: "",
-        branch: "",
+        branch: "Architecture, Planning and Design",
         linkedinLink: "",
         githubLink: "",
         resumeLink: "",
-        year: "",
-        courseType: "",
-    });
+        year: "1st Year",
+        courseType: "B.Tech",
+    };
 
+    const [profileData, setProfileData] = useState(initial);
     const [isEditing, setIsEditing] = useState(false);
-    const [editData, setEditData] = useState({ ...profileData });
-    const [isLoading, setIsLoading] = useState(true);
-    const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+    const [editData, setEditData] = useState({ ...initial });
+    const [isLoading, setIsLoading] = useState(!hasInitialData);
     const { data: session, update } = useSession();
 
     const router = useRouter();
     const { edit } = router.query;
 
     useEffect(() => {
-        loadProfile();
-        if (edit === "true") {
-            setIsEditing(true);
+        if (hasInitialData) {
+            setProfileData(initial);
+            setEditData(initial);
+            setIsLoading(false);
+            if (edit === "true") {
+                setIsEditing(true);
+            }
+        } else {
+            loadProfile();
+            if (edit === "true") {
+                setIsEditing(true);
+            }
         }
-    }, [edit]);
+    }, [edit, initialProfile]);
 
     const loadProfile = async () => {
         try {
@@ -52,37 +83,37 @@ const ProfilePage = () => {
                 return;
             }
             const user = rawUser as UserWithRoles;
-            const roles = user.roles || [];
-            if (roles.includes("STUDENT")) {
-                const response = await fetch(`${BACKEND_URL}/students/getinfo/${user.id}`);
-                const student = await response.json();
-                const profileData = {
-                    name: student.name,
-                    rollNumber: student.rollNo,
-                    emailId: student.user.email,
-                    cpi: student.cpi.toString(),
-                    branch: student.branch,
+
+            // Fetch student profile directly
+            const studentRes = await studentsAPI.getProfile(user.id, user.email);
+            const student = studentRes?.data || studentRes;
+
+            if (student && (student.rollNo || student.id)) {
+                const yearStr = student.year ? (typeof student.year === "number" ? `${student.year}${getOrdinalSuffix(student.year)} Year` : student.year) : "1st Year";
+                const fetchedProfile = {
+                    name: student.name || user.name || "",
+                    rollNumber: student.rollNo || "",
+                    emailId: student.user?.email || user.email || "",
+                    cpi: student.cpi !== undefined && student.cpi !== null ? student.cpi.toString() : "",
+                    branch: student.branch || "Architecture, Planning and Design",
                     linkedinLink: student.linkedinUrl || "",
                     githubLink: student.githubUrl || "",
                     resumeLink: student.resumeUrl || "",
-                    year: `${student.year}${getOrdinalSuffix(student.year)} Year`,
-                    courseType: student.courseType,
+                    year: yearStr,
+                    courseType: student.courseType || "B.Tech",
                 };
-                setProfileData(profileData);
-                setEditData(profileData);
-            } else {
-                const rawUser = await getStoredUser();
-                if (!rawUser) {
-                    router.push("/grow-your-resume/login");
-                    return;
+                setProfileData(fetchedProfile);
+                setEditData(fetchedProfile);
+                if (edit === "true" || !student.rollNo) {
+                    setIsEditing(true);
+                } else {
+                    setIsEditing(false);
                 }
-                const user = rawUser as UserWithRoles;
-                const response = await fetch(`${BACKEND_URL}/users/getid/${user.id}`);
-                const defaultUser = await response.json();
-                const profileData = {
-                    name: "",
+            } else {
+                const defaultProfile = {
+                    name: user.name || "",
                     rollNumber: "",
-                    emailId: defaultUser.email,
+                    emailId: user.email || "",
                     cpi: "",
                     branch: "Architecture, Planning and Design",
                     linkedinLink: "",
@@ -91,12 +122,12 @@ const ProfilePage = () => {
                     year: "1st Year",
                     courseType: "B.Tech",
                 };
-                setProfileData(profileData);
-                setEditData(profileData);
+                setProfileData(defaultProfile);
+                setEditData(defaultProfile);
+                setIsEditing(true);
             }
         } catch (error) {
             console.error("Error loading profile:", error);
-            toast.error("Failed to load profile");
         } finally {
             setIsLoading(false);
         }
@@ -117,86 +148,76 @@ const ProfilePage = () => {
 
     const handleSave = async () => {
         try {
-            console.log("saving..");
-            const studentId = await getStudentId();
-            if (!studentId) {
-                toast.error("Please log in to update profile");
-                return;
-            }
-            if (!editData.name) {
-                toast.error("Name is required.");
-                return;
-            } else if (!editData.rollNumber) {
-                toast.error("Roll Number is required.");
-                return;
-            } else if (!editData.cpi) {
-                toast.error("CPI is required.");
-                return;
-            } else if (!editData.resumeLink) {
-                toast.error("Resume is required.");
-                return;
-            }
-            const data = {
-                userId: studentId,
-                name: editData.name,
-                rollNo: editData.rollNumber,
-                branch: editData.branch,
-                cpi: Number.parseFloat(editData.cpi) || 0,
-                courseType: editData.courseType || "",
-                year: parseInt(editData.year.split("st")[0] || editData.year.split("nd")[0] || editData.year.split("rd")[0] || editData.year.split("th")[0]),
-                linkedinUrl: editData.linkedinLink || "",
-                githubUrl: editData.githubLink || "",
-                resumeUrl: editData.resumeLink || "",
-            };
-
             const rawUser = await getStoredUser();
             if (!rawUser) {
+                toast.error("Please log in to update profile");
                 router.push("/grow-your-resume/login");
                 return;
             }
             const user = rawUser as UserWithRoles;
-            const roles = user.roles;
-            if (!roles?.includes("STUDENT")) {
-                try {
-                    const res = await fetch(`${BACKEND_URL}/students/register`, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify(data),
-                    });
 
-                    if (!res.ok) {
-                        const error = await res.json();
-                        console.error("Failed to create student:", error);
-                        // Handle error UI or rethrow if needed
-                        throw new Error(error.message || "Failed to create student");
-                    }
-                    const updatedRoles = Array.from(new Set([...(roles || []), "STUDENT"]));
-
-                    if (session?.user) {
-                        await update({
-                            user: {
-                                ...session.user,
-                                roles: updatedRoles,
-                            },
-                        });
-                    }
-                    const newSession = await getSession();
-                } catch (error) {
-                    console.error("Error creating student:", error);
-                }
-            } else {
-                await studentsAPI.updateProfile(studentId, data);
+            if (!editData.name?.trim()) {
+                toast.error("Name is required.");
+                return;
+            } else if (!editData.rollNumber?.trim()) {
+                toast.error("Roll Number is required.");
+                return;
+            } else if (!editData.cpi?.toString().trim()) {
+                toast.error("CPI is required.");
+                return;
+            } else if (!editData.resumeLink?.trim()) {
+                toast.error("Resume URL is required.");
+                return;
             }
 
-            // setProfileData({ ...editData });
+            const rawYear = editData.year || "1";
+            const yearNum = parseInt(rawYear.replace(/\D/g, ""), 10) || 1;
+
+            const data = {
+                userId: user.id,
+                name: editData.name.trim(),
+                rollNo: editData.rollNumber.trim(),
+                branch: editData.branch || "Architecture, Planning and Design",
+                cpi: Number.parseFloat(editData.cpi) || 0,
+                courseType: editData.courseType || "B.Tech",
+                year: yearNum,
+                linkedinUrl: ensureAbsoluteUrl(editData.linkedinLink),
+                githubUrl: ensureAbsoluteUrl(editData.githubLink),
+                resumeUrl: ensureAbsoluteUrl(editData.resumeLink),
+            };
+
+            // Check if student already exists in database
+            const existingStudentRes = await studentsAPI.getProfile(user.id, user.email);
+            const existingStudent = existingStudentRes?.data || existingStudentRes;
+
+            let savedRes;
+            if (existingStudent && (existingStudent.id || existingStudent.rollNo)) {
+                savedRes = await studentsAPI.updateProfile(user.id, data);
+            } else {
+                savedRes = await studentsAPI.registerProfile(data);
+            }
+
+            if (savedRes && savedRes.success === false) {
+                throw new Error(savedRes.error || "Failed to save profile");
+            }
+
+            const updatedRoles = Array.from(new Set([...(user.roles || []), "STUDENT"]));
+            if (session?.user) {
+                await update({
+                    user: {
+                        ...session.user,
+                        roles: updatedRoles,
+                    },
+                });
+            }
+            await getSession();
+
             await loadProfile();
             setIsEditing(false);
-            toast.success("Profile updated successfully!");
+            toast.success("Profile saved successfully!");
         } catch (error: any) {
             console.error("Error updating profile:", error);
-            toast.error(error.message || "Failed to update profile");
+            toast.error("Failed to save profile. Please check your information and try again.");
         }
     };
 
@@ -225,11 +246,9 @@ const ProfilePage = () => {
             <Head>
                 <title>My Profile - IIT BHU Grow Your Resume</title>
                 <meta name="description" content="Student profile and information" />
-                <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-                <style>{`font-family:'Poppins',sans-serif;`}</style>
             </Head>
 
-            <div className="min-h-screen bg-white" style={{ fontFamily: "Poppins, sans-serif" }}>
+            <div className="min-h-screen bg-white font-poppins">
                 {/* Header */}
                 <div className="bg-[#f8f9fa] text-black">
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -397,7 +416,7 @@ const ProfilePage = () => {
                                         ) : (
                                             <div className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg">
                                                 {profileData.linkedinLink ? (
-                                                    <a href={profileData.linkedinLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
+                                                    <a href={ensureAbsoluteUrl(profileData.linkedinLink)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
                                                         {profileData.linkedinLink}
                                                     </a>
                                                 ) : (
@@ -421,7 +440,7 @@ const ProfilePage = () => {
                                         ) : (
                                             <div className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg">
                                                 {profileData.githubLink ? (
-                                                    <a href={profileData.githubLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
+                                                    <a href={ensureAbsoluteUrl(profileData.githubLink)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
                                                         {profileData.githubLink}
                                                     </a>
                                                 ) : (
@@ -445,7 +464,7 @@ const ProfilePage = () => {
                                         ) : (
                                             <div className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg">
                                                 {profileData.resumeLink ? (
-                                                    <a href={profileData.resumeLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
+                                                    <a href={ensureAbsoluteUrl(profileData.resumeLink)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
                                                         View Resume
                                                     </a>
                                                 ) : (
@@ -454,6 +473,9 @@ const ProfilePage = () => {
                                             </div>
                                         )}
                                         <p className="text-sm text-gray-500 mt-1">Link to your resume (Google Drive, Dropbox, etc.)</p>
+                                        <p className="text-sm text-red-500 font-medium mt-2">
+                                            Note: Please ensure your Drive link access is set to &apos;Anyone with the link can view&apos;. Startups will reject your application if they cannot open your resume.
+                                        </p>
                                     </div>
                                 </div>
                             </div>
@@ -480,3 +502,40 @@ const ProfilePage = () => {
 };
 
 export default ProfilePage;
+
+export async function getServerSideProps(context: any) {
+    try {
+        const session: any = await getServerSession(context.req, context.res, authOptions);
+
+        if (!session || !session.user) {
+            return {
+                redirect: {
+                    destination: "/grow-your-resume/login?role=student",
+                    permanent: false,
+                },
+            };
+        }
+
+        let initialProfile = session.user?.roleData?.student || null;
+        if (!initialProfile || !initialProfile.rollNo) {
+            try {
+                initialProfile = await serverAPI.getStudentProfile(session.user.id, session.jwtToken, session.user.email);
+            } catch (e) {}
+        }
+
+        return {
+            props: {
+                initialProfile: initialProfile ? JSON.parse(JSON.stringify(initialProfile)) : null,
+                user: session.user ? JSON.parse(JSON.stringify(session.user)) : null,
+            },
+        };
+    } catch (error) {
+        console.error("Error in student profile getServerSideProps:", error);
+        return {
+            redirect: {
+                destination: "/grow-your-resume/login?role=student",
+                permanent: false,
+            },
+        };
+    }
+}

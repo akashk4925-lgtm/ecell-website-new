@@ -382,10 +382,13 @@ const Apply = () => {
                 <p className="text-gray-600">Fill out the form below to apply for the E-Cell team.</p>
               </div>
 
+              {/* To disable the form, change 'false' to 'true' in the block below, and change 'true' to 'false' in the form block */}
+              {true && (
               <div className="text-center py-8 bg-gray-50 rounded-xl border border-gray-200">
                 <h3 className="text-2xl font-bold text-orange-600 mb-2">Registrations Closed</h3>
                 <p className="text-gray-600">Thank you for your interest. The registration for E-Cell Team Expansion has ended.</p>
               </div>
+              )}
 
               {false && (
               <form onSubmit={handleSubmit} className="space-y-6">

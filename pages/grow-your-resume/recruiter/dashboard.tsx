@@ -1,28 +1,39 @@
-"use client";
-
 import { useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { LogOut, Edit, Plus, Trash2, Eye, X, ExternalLink } from "lucide-react";
 import { NavLogo } from "../../../components/navbar/NavLogo";
-import { useRouter } from "next/navigation";
-import { postsAPI, applicationsAPI } from "../../../lib/api";
+import { useRouter } from "next/router";
+import { postsAPI, applicationsAPI, recruitersAPI } from "../../../lib/api";
 import { getRecruiterId } from "../../../lib/auth";
 import { signOut } from "next-auth/react";
 import { toast } from "react-hot-toast";
 import { Recruiter, Post, Application, Student, JobType } from "../../../lib/types";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../../api/auth/[...nextauth]";
+import { serverAPI } from "../../../lib/server-api";
 
-const RecruiterDashboard = () => {
+interface RecruiterDashboardProps {
+    initialRecruiter?: any;
+    initialPostings?: Post[];
+    initialApplications?: Application[];
+}
+
+const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
+    initialRecruiter,
+    initialPostings,
+    initialApplications,
+}) => {
     const [activeTab, setActiveTab] = useState("postings");
-    const [postings, setPostings] = useState<Post[]>([]);
-    const [applications, setApplications] = useState<Application[]>([]);
+    const [postings, setPostings] = useState<Post[]>(initialPostings || []);
+    const [applications, setApplications] = useState<Application[]>(initialApplications || []);
     const [selectedPosting, setSelectedPosting] = useState<Post | null>(null);
     const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
     const [showStudentModal, setShowStudentModal] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editingPosting, setEditingPosting] = useState<Post | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [currentRecruiter, setCurrentRecruiter] = useState({
+    const [isLoading, setIsLoading] = useState(!initialRecruiter);
+    const [currentRecruiter, setCurrentRecruiter] = useState(initialRecruiter || {
         id: "",
         companyName: "",
         jobTitle: "",
@@ -41,126 +52,52 @@ const RecruiterDashboard = () => {
 
     const router = useRouter();
     useEffect(() => {
-        const loadData = async () => {
-            const recruiter = await loadRecruiterData();
-            if (recruiter) {
-                await loadDashboardData(recruiter);
-            }
-        };
-        loadData();
-    }, []);
+        if (!initialRecruiter) {
+            const loadData = async () => {
+                try {
+                    setIsLoading(true);
+                    const recruiterId = await getRecruiterId();
+                    if (!recruiterId) {
+                        toast.error("Login to access");
+                        router.push("/grow-your-resume");
+                        return;
+                    }
 
-    const loadRecruiterData = async () => {
-        try {
-            const recruiterId = await getRecruiterId();
-            if (!recruiterId) {
-                console.error("No recruiter ID found");
-                toast.error("Login to access");
-                router.push("/grow-your-resume");
-                return null;
-            }
+                    // Fetch profile, posts, and applications in parallel
+                    const [recruiter, rawPosts, rawApplications] = await Promise.all([
+                        recruitersAPI.getProfile(recruiterId).catch(() => null),
+                        postsAPI.getForRecruiter().catch(() => null),
+                        applicationsAPI.getForRecruiter().catch(() => null)
+                    ]);
 
-            const response = await fetch(`${BACKEND_URL}/recruiters/getinfo/${recruiterId}`);
-            const data = await response.json();
+                    if (recruiter) {
+                        setCurrentRecruiter(recruiter);
+                        const data = recruiter?.recruiter || recruiter;
+                        if (!(data?.companyName && data?.websiteUrl)) {
+                            router.push("/grow-your-resume/recruiter/profile?edit=true");
+                        }
+                    }
 
-            if (!response.ok) {
-                if (data.error === "RECRUITER_NOT_FOUND") {
-                    toast.error(data.message);
-                    await signOut({ redirect: false });
-                    router.push(data.redirectTo);
-                    return null;
+                    const posts = rawPosts?.data ? rawPosts.data : (Array.isArray(rawPosts) ? rawPosts : []);
+                    setPostings(posts);
+
+                    const allApplications = Array.isArray(rawApplications) ? rawApplications : [];
+                    const recruiterApplications = allApplications.filter((app: Application) => {
+                        return posts.some((post: Post) => post.id === app.postId);
+                    });
+                    setApplications(recruiterApplications);
+                } catch (err) {
+                    console.error("Failed to load dashboard data:", err);
+                } finally {
+                    setIsLoading(false);
                 }
-            }
+            };
 
-            setCurrentRecruiter(data); // still set it in state for other components
-            // console.log(data);
-
-            const isComplete = data?.companyName && data?.websiteUrl;
-            if (!isComplete) {
-                router.push("/grow-your-resume/recruiter/profile?edit=true");
-            }
-
-            return data; // return recruiter object
-        } catch (error) {
-            console.error("Error loading recruiter data:", error);
-            toast.error("Failed to load recruiter profile");
-            return null;
+            loadData();
         }
-    };
+    }, [initialRecruiter]);
 
-    const loadDashboardData = async (recruiter: Recruiter) => {
-        try {
-            setIsLoading(true);
-            setError(null);
-            console.log("Fetching all posts...");
-            const posts = await postsAPI.getAll();
-            console.log("All posts received:", posts.length);
 
-            const recruiterPosts = posts.filter((post: Post) => {
-                return post.recruiterId === recruiter.id;
-            });
-
-            const formattedPosts = recruiterPosts.map((post: Post) => ({
-                id: post.id,
-                jobTitle: post.jobTitle,
-                companyName: post.companyName,
-                location: post.location,
-                jobType: post.jobType,
-                stipend: post.stipend,
-                requiredSkills: Array.isArray(post.requiredSkills) ? post.requiredSkills : [],
-                applicationCount: post.applications?.length || 0,
-                applications: post.applications,
-                createdAt: post.createdAt,
-                jobDescription: post.jobDescription,
-                qualification: post.qualification,
-                experience: post.experience,
-            }));
-
-            setPostings(formattedPosts);
-
-            // Load applications for recruiter's posts
-            console.log("Fetching all applications...");
-            const allApplications = await applicationsAPI.getAll();
-            console.log("All applications received:", allApplications.length);
-
-            const recruiterApplications = allApplications.filter((app: Application) => {
-                const isRecruiterApp = recruiterPosts.some((post: Post) => post.id === app.postId);
-                return isRecruiterApp;
-            });
-
-            console.log(`Found ${recruiterApplications.length} applications for recruiter`);
-
-            const formattedApplications = recruiterApplications.map((app: Application) => {
-                return {
-                    id: app.id,
-                    postingId: app.postId,
-                    post: app.post,
-                    student: {
-                        name: app.student?.name || "Unknown Student",
-                        rollNo: app.student?.rollNo || "N/A",
-                        cpi: app.student?.cpi?.toString() || "N/A",
-                        branch: app.student?.branch || "N/A",
-                        year: app.student?.year ? `${app.student.year}${getOrdinalSuffix(app.student.year)} Year` : "N/A",
-                        courseType: app.student?.courseType || "N/A",
-                        linkedinUrl: app.student?.linkedinUrl || null,
-                        githubUrl: app.student?.githubUrl || null,
-                        resumeUrl: app.student?.resumeUrl || null,
-                        user: app.student.user,
-                    },
-                    status: app.status?.toLowerCase() || "pending",
-                    appliedAt: app.appliedAt,
-                };
-            });
-
-            console.log("Formatted applications:", formattedApplications.length);
-            setApplications(formattedApplications);
-        } catch (error: any) {
-            console.error("Error loading dashboard data:", error);
-            setError(`Failed to load dashboard data: ${error.message}`);
-        } finally {
-            setIsLoading(false);
-        }
-    };
 
     const handleApplicationAction = async (applicationId: any, action: any) => {
         try {
@@ -172,7 +109,7 @@ const RecruiterDashboard = () => {
             toast.success(`Application ${action} successfully!`);
         } catch (error: any) {
             console.error(`Error ${action}ing application:`, error);
-            toast.error(error.message || `Failed to ${action} application`);
+            toast.error(`Failed to ${action} application. Please try again.`);
         }
     };
 
@@ -260,7 +197,6 @@ const RecruiterDashboard = () => {
                 <Head>
                     <title>Recruiter Dashboard - IIT BHU Grow Your Resume</title>
                     <meta name="description" content="Manage internship postings and applications" />
-                    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
                 </Head>
 
                 <div className="min-h-screen bg-white font-poppins">
@@ -317,13 +253,7 @@ const RecruiterDashboard = () => {
                     <h3 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Dashboard</h3>
                     <p className="text-gray-600 mb-4">{error}</p>
                     <button
-                        onClick={async () => {
-                            setError(null);
-                            const recruiter = await loadRecruiterData();
-                            if (recruiter) {
-                                await loadDashboardData(recruiter);
-                            }
-                        }}
+                        onClick={() => window.location.reload()}
                         className="px-4 py-2 bg-[#f56a38] text-white rounded-lg hover:bg-[#e55a32] transition-colors"
                     >
                         Try Again
@@ -338,11 +268,9 @@ const RecruiterDashboard = () => {
             <Head>
                 <title>Recruiter Dashboard - IIT BHU Grow Your Resume</title>
                 <meta name="description" content="Manage internship postings and applications" />
-                <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-                <style>{`font-family:'Poppins',sans-serif;`}</style>
             </Head>
 
-            <div className="min-h-screen bg-white" style={{ fontFamily: "Poppins, sans-serif" }}>
+            <div className="min-h-screen bg-white font-poppins">
                 {/* Header */}
                 <div className="bg-[#f8f9fa] text-black">
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -522,9 +450,8 @@ const RecruiterDashboard = () => {
                                                         </td>
                                                         <td className="px-6 py-4 whitespace-nowrap">
                                                             <span
-                                                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                                                    application.status === "PENDING" ? "bg-yellow-100 text-yellow-800" : application.status === "ACCEPTED" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
-                                                                }`}
+                                                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${application.status === "PENDING" ? "bg-yellow-100 text-yellow-800" : application.status === "ACCEPTED" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                                                                    }`}
                                                             >
                                                                 {application.status}
                                                             </span>
@@ -687,7 +614,7 @@ const RecruiterDashboard = () => {
                                             toast.success("Posting updated successfully!");
                                         } catch (error: any) {
                                             console.error("Error updating posting:", error);
-                                            toast.error(error.message || "Failed to update posting");
+                                            toast.error("Failed to update posting. Please try again.");
                                         }
                                     }}
                                     className="space-y-4"
@@ -834,3 +761,35 @@ const RecruiterDashboard = () => {
 };
 
 export default RecruiterDashboard;
+
+export async function getServerSideProps(context: any) {
+    try {
+        const session: any = await getServerSession(context.req, context.res, authOptions);
+
+        if (!session || !session.user) {
+            return {
+                redirect: {
+                    destination: "/grow-your-resume/login?role=recruiter",
+                    permanent: false,
+                },
+            };
+        }
+
+        // Data is fetched client-side for instant page load
+        return {
+            props: {
+                initialRecruiter: null,
+                initialPostings: null,
+                initialApplications: null,
+            },
+        };
+    } catch (error) {
+        console.error("Error in recruiter dashboard getServerSideProps:", error);
+        return {
+            redirect: {
+                destination: "/grow-your-resume/login?role=recruiter",
+                permanent: false,
+            },
+        };
+    }
+}

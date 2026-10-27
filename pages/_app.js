@@ -1,102 +1,86 @@
 import React, { useEffect, useState } from "react";
 import "../styles/globals.scss";
 import Router from "next/router";
-import dynamic from "next/dynamic";
-// import SSRProvider from "react-bootstrap/SSRProvider";
 import Layout from "../components/Layout";
-import { AuthProvider } from "../context/auth";
 import Head from "next/head";
 import Script from "next/script";
 import { Toaster } from "react-hot-toast";
 import { Analytics } from "@vercel/analytics/react";
-import { ToastContainer } from "react-toastify";
-import { Provider } from 'react-redux';
-import { store } from "@/lib/redux/store";
-import GlobalDialog from "@/components/GlobalDialogWrapper/GlobalDialogWrapper";
+import { Poppins } from "next/font/google";
+
 import GlobalProvider from "@/components/Providers/GlobalProvider";
 import { SessionProvider } from "next-auth/react";
 
-// import { Player, Controls } from "@lottiefiles/react-lottie-player";
-// const Player = dynamic(
-//   () => import("@lottiefiles/react-lottie-player"),
-//   { ssr: false } // This will load the component only on client side
-// );
-// const Controls = dynamic(
-//   () => import("@lottiefiles/react-lottie-player"),
-//   { ssr: false } // This will load the component only on client side
-// );
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-poppins",
+  display: "swap",
+});
 
-function MyApp({ Component, pageProps:{session,...pageProps}, }) {
-  const [loading, setLoading] = useState(false);
+function MyApp({ Component, pageProps: { session, ...pageProps }, router }) {
+  const isGYR = router?.pathname?.startsWith("/grow-your-resume");
+
   useEffect(() => {
-    Router.events.on("routeChangeStart", (url, { shallow }) => {
-      setLoading(true);
-    });
-    Router.events.on("routeChangeComplete", (url, { shallow }) => {
-      setLoading(false);
-    });
+    const handleComplete = () => {};
+
+    Router.events.on("routeChangeComplete", handleComplete);
+    Router.events.on("routeChangeError", handleComplete);
+
+    return () => {
+      Router.events.off("routeChangeComplete", handleComplete);
+      Router.events.off("routeChangeError", handleComplete);
+    };
   }, []);
 
-  return (
-    // <SSRProvider>
-    <SessionProvider session={session}>
-<GlobalProvider>
-      <Layout>
-        <Head>
-          <link rel="shortcut icon" href="https://ik.imagekit.io/ecelliitbhu/website/favicon.ico" />
-          <meta
-            name="viewport"
-            content="initial-scale=1.0, width=device-width"
-            key="viewport"
-          />
-          <meta name="robots" content="index, follow" />
-        </Head>
-        {loading ? (
-          // <Player
-          //   autoplay
-          //   loop
-          //   src="https://assets8.lottiefiles.com/packages/lf20_b0firirj.json"
-          //   style={{ height: "300px", width: "300px" }}
-          // >
-          //   <Controls visible={false} />
-          // </Player>
-          <p>Loading...</p>
-        ) : (
-          <>
+  const content = (
+        <div className={poppins.variable}>
+          <Layout>
+            <Head>
+              <link rel="shortcut icon" href="https://ik.imagekit.io/ecelliitbhu/website/favicon.ico" />
+              <meta
+                name="viewport"
+                content="initial-scale=1.0, width=device-width"
+                key="viewport"
+              />
+              <meta name="robots" content="index, follow" />
+            </Head>
             <Script
-              strategy="afterInteractive"
+              strategy="lazyOnload"
               src={`https://www.googletagmanager.com/gtag/js?id=G-Y2J09VFNXJ`}
             />
 
-            <Script id="google-analytics" strategy="afterInteractive">
+            <Script id="google-analytics" strategy="lazyOnload">
               {`
-                    window.dataLayer = window.dataLayer || [];
-                    function gtag(){dataLayer.push(arguments);}
-                    gtag('js', new Date());
-                    gtag('config', 'G-Y2J09VFNXJ');
-                `}
+                  window.dataLayer = window.dataLayer || [];
+                  function gtag(){dataLayer.push(arguments);}
+                  gtag('js', new Date());
+                  gtag('config', 'G-Y2J09VFNXJ');
+              `}
             </Script>
 
-             {/* added */}
+            {/* added */}
             <Script
-              strategy="afterInteractive"
+              strategy="lazyOnload"
               src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.1/dist/js/bootstrap.bundle.min.js"
               integrity="sha384-/bQdsTh/da6pkI1MST/rWKFNjaCP5gBSY4sEBT38Q/9RBh9AH40zEOg7Hlq2THRZ"
               crossOrigin="anonymous"
             />
 
-            
             <Component {...pageProps} />
-            <ToastContainer position="top-center" />
+
             <Analytics />
             <div>
               <Toaster position={"top-center"} />
             </div>
-          </>
-        )}
-      </Layout>
-</GlobalProvider>
-</SessionProvider>
+          </Layout>
+        </div>
+  );
+
+  return (
+    <SessionProvider session={session} refetchInterval={0} refetchOnWindowFocus={false}>
+      {isGYR ? content : <GlobalProvider>{content}</GlobalProvider>}
+    </SessionProvider>
   );
 }
 

@@ -1,19 +1,10 @@
-import { getSession } from "next-auth/react";
-
-export interface SessionUser {
-  id?: string;
-  name?: string | null;
-  email?: string | null;
-  image?: string | null;
-  roles?: string[];
-  [key: string]: unknown;
-}
+import { getCachedSession, clearCachedSession } from "./session-cache";
 
 // Get the currently logged-in user from NextAuth session
-export const getStoredUser = async (): Promise<SessionUser | null> => {
+export const getStoredUser = async () => {
   try {
-    const session = await getSession();
-    return (session?.user as SessionUser) || null;
+    const session = await getCachedSession();
+    return session?.user || null;
   } catch (error) {
     console.error("Error getting session user:", error);
     return null;
@@ -21,15 +12,16 @@ export const getStoredUser = async (): Promise<SessionUser | null> => {
 };
 
 // Get user ID from session
-export const getCurrentUserId = async (): Promise<string | null> => {
+export const getCurrentUserId = async () => {
   const user = await getStoredUser();
+  // console.log("Current user from session:", user);
   return user?.id || null;
 };
 
 // Get user roles (STUDENT, RECRUITER, AMBASSADOR)
-export const getCurrentUserRole = async (): Promise<string[]> => {
+export const getCurrentUserRole = async () => {
   const user = await getStoredUser();
-  const roles: string[] = [];
+  const roles = [];
 
   if (!user) return roles;
 
@@ -41,25 +33,28 @@ export const getCurrentUserRole = async (): Promise<string[]> => {
 };
 
 // Check if user is authenticated
-export const isAuthenticated = async (): Promise<boolean> => {
+export const isAuthenticated = async () => {
   const user = await getStoredUser();
   return !!user;
 };
 
 // Logout utility
-export const logout = async (): Promise<void> => {
+export const logout = async () => {
   const { signOut } = await import("next-auth/react");
+  clearCachedSession();
   await signOut();
 };
 
 // Get student ID (uses user.id for now)
-export const getStudentId = async (): Promise<string | null> => {
+export const getStudentId = async () => {
   const user = await getStoredUser();
+  // console.log("Getting student ID from session:", user);
   return user?.id || null;
 };
 
 // Get recruiter ID (uses user.id for now)
-export const getRecruiterId = async (): Promise<string | null> => {
+export const getRecruiterId = async () => {
   const user = await getStoredUser();
+  // console.log("Getting recruiter ID from session:", user);
   return user?.id || null;
 };

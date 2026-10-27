@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
@@ -7,37 +5,59 @@ import { LogOut, Save, Edit, X } from "lucide-react";
 import { NavLogo } from "../../../components/navbar/NavLogo";
 import { useRouter } from "next/router";
 import { recruitersAPI } from "../../../lib/api";
-import { getRecruiterId, getStoredUser } from "../../../lib/auth";
+import { getStoredUser } from "../../../lib/auth";
 import { toast } from "react-hot-toast";
 import { UserWithRoles } from "../../../lib/types";
-import { getSession, useSession } from "next-auth/react";
-import { signOut } from "next-auth/react";
+import { useSession, signOut, getSession } from "next-auth/react";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../../api/auth/[...nextauth]";
+import { serverAPI } from "../../../lib/server-api";
 
-const ProfilePage = () => {
-    const [profileData, setProfileData] = useState({
+interface ProfilePageProps {
+    initialProfile?: any;
+    user?: UserWithRoles;
+}
+
+const ProfilePage: React.FC<ProfilePageProps> = ({ initialProfile, user: ssrUser }) => {
+    const hasInitialData = !!(initialProfile && (initialProfile.companyName || initialProfile.id));
+    const initial = hasInitialData ? {
+        companyName: initialProfile.companyName || "",
+        emailId: initialProfile.user?.email || ssrUser?.email || "",
+        address: initialProfile.address || "",
+        websiteUrl: initialProfile.websiteUrl || "",
+        phoneNumber: initialProfile.phoneNumber || "",
+    } : {
         companyName: "",
-        emailId: "",
+        emailId: ssrUser?.email || "",
         address: "",
         websiteUrl: "",
         phoneNumber: "",
-    });
+    };
 
+    const [profileData, setProfileData] = useState(initial);
     const [isEditing, setIsEditing] = useState(false);
-    const [editData, setEditData] = useState({ ...profileData });
-    const [isLoading, setIsLoading] = useState(true);
+    const [editData, setEditData] = useState({ ...initial });
+    const [isLoading, setIsLoading] = useState(!hasInitialData);
     const { data: session, update } = useSession();
 
     const router = useRouter();
     const { edit } = router.query;
 
-    const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
-
     useEffect(() => {
-        loadProfile();
-        if (edit === "true") {
-            setIsEditing(true);
+        if (hasInitialData) {
+            setProfileData(initial);
+            setEditData(initial);
+            setIsLoading(false);
+            if (edit === "true" || (!initial.companyName && !initial.websiteUrl)) {
+                setIsEditing(true);
+            }
+        } else {
+            loadProfile();
+            if (edit === "true") {
+                setIsEditing(true);
+            }
         }
-    }, [edit]);
+    }, [edit, initialProfile]);
 
     const loadProfile = async () => {
         try {
@@ -49,43 +69,41 @@ const ProfilePage = () => {
                 return;
             }
             const user = rawUser as UserWithRoles;
-            const roles = user.roles || [];
 
-            if (roles.includes("RECRUITER")) {
-                const recruiter = await recruitersAPI.getProfile(user.id);
-                const profileData = {
-                    companyName: recruiter.companyName,
-                    emailId: recruiter.user.email,
+            // Try to fetch recruiter profile directly
+            const recruiterRes = await recruitersAPI.getProfile(user.id);
+            const recruiter = recruiterRes?.data || recruiterRes;
+
+            if (recruiter && (recruiter.companyName || recruiter.id)) {
+                const fetchedData = {
+                    companyName: recruiter.companyName || "",
+                    emailId: recruiter.user?.email || user.email || "",
                     address: recruiter.address || "",
                     websiteUrl: recruiter.websiteUrl || "",
-                    phoneNumber: recruiter.phoneNumber||"",
+                    phoneNumber: recruiter.phoneNumber || "",
                 };
-                // console.log(profileData);
-                setProfileData(profileData);
-                setEditData(profileData);
-            } else {
-                const rawUser = await getStoredUser();
-                if (!rawUser) {
-                    toast.error("Login to access");
-                    router.push("/grow-your-resume/login");
-                    return;
+                setProfileData(fetchedData);
+                setEditData(fetchedData);
+                if (edit === "true" || (!recruiter.companyName && !recruiter.websiteUrl)) {
+                    setIsEditing(true);
+                } else {
+                    setIsEditing(false);
                 }
-                const user = rawUser as UserWithRoles;
-                const response = await fetch(`${BACKEND_URL}/users/getid/${user.id}`);
-                const defaultUser = await response.json();
-                const profileData = {
+            } else {
+                // New recruiter with no record yet: set fallback email and open edit mode
+                const fallbackData = {
                     companyName: "",
-                    emailId: defaultUser.email,
+                    emailId: user.email || "",
                     address: "",
                     websiteUrl: "",
                     phoneNumber: "",
                 };
-                setProfileData(profileData);
-                setEditData(profileData);
+                setProfileData(fallbackData);
+                setEditData(fallbackData);
+                setIsEditing(true);
             }
         } catch (error) {
             console.error("Error loading profile:", error);
-            toast.error("Failed to load profile");
         } finally {
             setIsLoading(false);
         }
@@ -100,97 +118,85 @@ const ProfilePage = () => {
 
     const handleSave = async () => {
         try {
-            const recruiterId = await getRecruiterId();
-            if (!recruiterId) {
-                toast.error("Please log in to update profile");
-                return;
-            }
-            if (!editData.companyName) {
-                toast.error("Company Name is required.");
-                return;
-            } else if (!editData.websiteUrl) {
-                toast.error("Website Url is required.");
-                return;
-            } else if (!editData.phoneNumber){
-                toast.error("Phone Number is required.");
-                return;
-            }
-            // Phone number validation (digits only)
-            if (editData.phoneNumber) {
-                const digitsOnly = editData.phoneNumber.replace(/\D/g, "");
-                if (digitsOnly.length < 10) {
-                    toast.error("Phone number must be at least 10 digits.");
-                    return;
-                }
-            }
-            const data = {
-                userId: recruiterId,
-                companyName: editData.companyName || "",
-                address: editData.address || "",
-                websiteUrl: editData.websiteUrl || "",
-                phoneNumber: editData.phoneNumber || "",
-            };
-
             const rawUser = await getStoredUser();
             if (!rawUser) {
+                toast.error("Please log in to update profile");
                 router.push("/grow-your-resume/login");
                 return;
             }
             const user = rawUser as UserWithRoles;
-            const roles = user.roles;
-            if (!roles?.includes("RECRUITER")) {
-                try {
-                    const res = await fetch(`${BACKEND_URL}/recruiters/register`, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify(data),
-                    });
 
-                    if (!res.ok) {
-                        const error = await res.json();
-                        console.error("Failed to create recruiter:", error);
-                        // Handle error UI or rethrow if needed
-                        throw new Error(error.message || "Failed to create recruiter");
-                    }
-                    const updatedRoles = Array.from(new Set([...(roles || []), "RECRUITER"]));
-                    const profileData = {
-                        companyName: editData.companyName || "",
-                        emailId: editData.emailId || "",  // Email from editData
-                        address: editData.address || "",
-                        websiteUrl: editData.websiteUrl || "",
-                        phoneNumber: editData.phoneNumber || "",
-                    };
+            if (!editData.companyName?.trim()) {
+                toast.error("Company Name is required.");
+                return;
+            }
+            if (!editData.phoneNumber?.trim()) {
+                toast.error("Phone Number is required.");
+                return;
+            }
 
-                    setProfileData(profileData);
+            const payload = {
+                userId: user.id,
+                companyName: editData.companyName,
+                address: editData.address || "",
+                websiteUrl: editData.websiteUrl || "",
+                phoneNumber: editData.phoneNumber,
+            };
 
-                    if (session?.user) {
-                        await update({
-                            user: {
-                                ...session.user,
-                                roles: updatedRoles,
-                            },
-                        });
-                    }
-                    const newSession = await getSession();
-                } catch (error) {
-                    console.error("Error creating student:", error);
+            // 1. Check if recruiter record exists
+            const existingProfileRes = await recruitersAPI.getProfile(user.id);
+            const existing = existingProfileRes?.data || existingProfileRes;
+
+            let savedProfile = existing;
+            if (existing && (existing.id || existing.companyName)) {
+                // Update existing recruiter
+                const updated = await recruitersAPI.updateProfile(user.id, payload);
+                if (!updated) {
+                    toast.error("Failed to update profile");
+                    return;
                 }
+                savedProfile = { ...existing, ...(updated?.data || updated) };
             } else {
-                await recruitersAPI.updateProfile(recruiterId, {
-                    companyName: editData.companyName || "",
-                    address: editData.address || "",
-                    websiteUrl: editData.websiteUrl || "",
-                    phoneNumber: editData.phoneNumber || "",
+                // Register new recruiter via api.js
+                savedProfile = await recruitersAPI.registerProfile(payload);
+                if (!savedProfile || savedProfile.success === false) {
+                    throw new Error(savedProfile?.error || "Failed to register recruiter");
+                }
+            }
+
+            // 2. Update NextAuth session roles
+            const updatedRoles = Array.from(new Set([...(user.roles || []), "RECRUITER"]));
+            if (session?.user) {
+                await update({
+                    user: {
+                        ...session.user,
+                        roles: updatedRoles,
+                    },
                 });
             }
-            await loadProfile();
+            await getSession();
+
+            // 3. Update local UI state
+            const updatedProfile = {
+                ...editData,
+                emailId: editData.emailId || user.email || "",
+            };
+            setProfileData(updatedProfile);
+            setEditData(updatedProfile);
             setIsEditing(false);
-            toast.success("Profile updated successfully!");
+
+            toast.success("Profile saved successfully!");
+
+            // Unverified recruiters must wait for admin approval before entering
+            // the dashboard.
+            router.push(
+                savedProfile?.verified
+                    ? "/grow-your-resume/recruiter/dashboard"
+                    : "/grow-your-resume/recruiter/verification-pending"
+            );
         } catch (error: any) {
-            console.error("Error updating profile:", error);
-            toast.error("Failed to update profile");
+            console.error("Error saving profile:", error);
+            toast.error("Failed to save profile. Please check your information and try again.");
         }
     };
 
@@ -219,10 +225,8 @@ const ProfilePage = () => {
             <Head>
                 <title>My Profile - IIT BHU Grow Your Resume</title>
                 <meta name="description" content="Recruiter profile and information" />
-                <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-                <style>{`font-family:'Poppins',sans-serif;`}</style>
             </Head>
-            <div className="min-h-screen bg-white" style={{ fontFamily: "Poppins, sans-serif" }}>
+            <div className="min-h-screen bg-white font-poppins">
                 {/* Header */}
                 <div className="bg-[#f8f9fa] text-black">
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -304,65 +308,65 @@ const ProfilePage = () => {
                                     </div>
                                 </div>
                                 <div className="mt-8">
-                                <div className="grid md:grid-cols-2 gap-6">
+                                    <div className="grid md:grid-cols-2 gap-6">
 
-                                    {/* Website URL */}
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">Website Link</label>
-                                        {isEditing ? (
-                                            <input
-                                                type="url"
-                                                value={editData.websiteUrl}
-                                                onChange={(e) => handleInputChange("websiteUrl", e.target.value)}
-                                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f56a38] focus:border-transparent"
-                                                placeholder="https://company.com"
-                                            />
-                                        ) : (
-                                            <div className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg">
-                                                {profileData.websiteUrl ? (
-                                                    <a
-                                                        href={profileData.websiteUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="text-blue-600 hover:text-blue-800"
-                                                    >
-                                                        {profileData.websiteUrl}
-                                                    </a>
-                                                ) : (
-                                                    <span className="text-gray-500">Not provided</span>
-                                                )}
-                                            </div>
-                                        )}
+                                        {/* Website URL */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Website Link</label>
+                                            {isEditing ? (
+                                                <input
+                                                    type="url"
+                                                    value={editData.websiteUrl}
+                                                    onChange={(e) => handleInputChange("websiteUrl", e.target.value)}
+                                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f56a38] focus:border-transparent"
+                                                    placeholder="https://company.com"
+                                                />
+                                            ) : (
+                                                <div className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg">
+                                                    {profileData.websiteUrl ? (
+                                                        <a
+                                                            href={profileData.websiteUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="text-blue-600 hover:text-blue-800"
+                                                        >
+                                                            {profileData.websiteUrl}
+                                                        </a>
+                                                    ) : (
+                                                        <span className="text-gray-500">Not provided</span>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Phone Number */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+                                            {isEditing ? (
+                                                <input
+                                                    type="tel"
+                                                    value={editData.phoneNumber}
+                                                    onChange={(e) => handleInputChange("phoneNumber", e.target.value)}
+                                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f56a38] focus:border-transparent"
+                                                    placeholder="1234567890"
+                                                />
+                                            ) : (
+                                                <div className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg">
+                                                    {profileData.phoneNumber ? (
+                                                        <a
+                                                            href={`tel:${profileData.phoneNumber}`}
+                                                            className="text-blue-600 hover:text-blue-800"
+                                                        >
+                                                            {profileData.phoneNumber}
+                                                        </a>
+                                                    ) : (
+                                                        <span className="text-gray-500">Not provided</span>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
                                     </div>
-
-                                    {/* Phone Number */}
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
-                                        {isEditing ? (
-                                            <input
-                                                type="tel"
-                                                value={editData.phoneNumber}
-                                                onChange={(e) => handleInputChange("phoneNumber", e.target.value)}
-                                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f56a38] focus:border-transparent"
-                                                placeholder="1234567890"
-                                            />
-                                        ) : (
-                                            <div className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg">
-                                                {profileData.phoneNumber ? (
-                                                    <a
-                                                        href={`tel:${profileData.phoneNumber}`}
-                                                        className="text-blue-600 hover:text-blue-800"
-                                                    >
-                                                        {profileData.phoneNumber}
-                                                    </a>
-                                                ) : (
-                                                    <span className="text-gray-500">Not provided</span>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                </div>
                                 </div>
 
                             </div>
@@ -389,3 +393,34 @@ const ProfilePage = () => {
 };
 
 export default ProfilePage;
+
+export async function getServerSideProps(context: any) {
+    try {
+        const session: any = await getServerSession(context.req, context.res, authOptions);
+
+        if (!session || !session.user) {
+            return {
+                redirect: {
+                    destination: "/grow-your-resume/login?role=recruiter",
+                    permanent: false,
+                },
+            };
+        }
+
+        // Data is fetched client-side for instant page load
+        return {
+            props: {
+                initialProfile: null,
+                user: session.user,
+            },
+        };
+    } catch (error) {
+        console.error("Error in recruiter profile getServerSideProps:", error);
+        return {
+            redirect: {
+                destination: "/grow-your-resume/login?role=recruiter",
+                permanent: false,
+            },
+        };
+    }
+}
